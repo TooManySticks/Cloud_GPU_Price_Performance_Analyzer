@@ -41,5 +41,6 @@ Expand to more GPU models
 Add more features like PCIe vs SXM
 Build web interface for easy lookup
 Automate data updates via web scraping
+
 Credits
-Created by [Your Name] as a sample project to demonstrate GPU analysis in Python.
+Created by Ben Sutton + AI (ChatGPT & Claude2) as a sample project to demonstrate GPU analysis in Python.
