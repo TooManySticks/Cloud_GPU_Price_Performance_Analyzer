@@ -1,107 +1,69 @@
+# This program inputs the price and performance of a cloud GPU
+# calculates and outputs a letter grade (A-F)
 import pandas as pd
 import logging
 import unittest
 
-# Logging configuration
+# Path to the Excel dataset.
+DATAFILE = r"C:\Users\Ben\Desktop\pythonProject1\Data\1xA100_80GB_On-Demand_Pricing_Perf_Data.xlsx"
+
+# Initialize logging with DEBUG level to capture all messages.
 logging.basicConfig(level=logging.DEBUG)
 
-# Configuration
+# Configuration dictionary containing weights for scoring components
+# and min-max values for normalization of hardware attributes and pricing.
 config = {
   'weights': {
-    'Form_factor': 0.125,
-    'VRAM': 0.15,
-    'RAM': 0.15,
-    'vCPUs': 0.15,
-    'Internal_Storage': 0.075,
-    'Price_On_Demand': -0.25
+    'form_factor': 0.10,
+    'vram': 0.20,
+    'ram': 0.18,
+    'vcpus': 0.16,
+    'internal_storage': .11,
+    'price_on_demand': -0.25
   },
-
   'min_max': {
-    'Form_factor': {
-      'min': 'PCIe',
-      'max': 'SXM'
-    },
-   'VRAM': {
-      'min': 40,
-      'max': 80
-    },
-    'RAM': {
-      'min': 90,
-      'max': 251
-    },
-    'vCPUs': {
-      'min': 8,
-      'max': 30
-    },
-    'Internal_Storage': {
-      'min': 0,
-      'max': 4000
-    },
-    'Price_On_Demand': {
-      'min': 1.10,
-      'max': 3.36
-    }
+        'form_factor': {'min': 'PCIe', 'max': 'SXM'},
+        'vram': {'min': 40, 'max': 80},                 # VRAM in GB
+        'ram': {'min': 90, 'max': 251},                 # RAM in GB
+        'vcpus': {'min': 8, 'max': 30},
+        'internal_storage': {'min': 0, 'max': 4000},    # Internal Storage in GB
+        'price_on_demand': {'min': 1.10, 'max': 3.36}
   }
 }
 
-# Normalize function
+
+# Function to normalize all attributes in the dataset using pre-defined min-max values.
 def normalize_data(df):
+    print(df.dtypes)
+    form_factor_map = {'PCIe': 0, 'SXM': 1}
+    df['Normalized_form_factor'] = df['form_factor'].map(form_factor_map)
 
-  # Form factor
-  form_factor_map = {'PCIe': 0, 'SXM': 1}
-  df['Normalized_Form_factor'] = df['Form_factor'].map(form_factor_map)
+    # Loop over all features in the config for normalization
+    for feature, values in config['min_max'].items():
+        print(feature, df[feature].unique())
+        if feature != 'form_factor':
+            df[f'Normalized_{feature}'] = (df[feature] - values['min']) / (values['max'] - values['min'])
 
-  # VRAM
-  min_val = config['min_max']['VRAM']['min']
-  max_val = config['min_max']['VRAM']['max']
-  df['Normalized_VRAM'] = (df['VRAM'] - min_val) / (max_val - min_val)
+    # Adjust normalized price, such that lower prices get higher scores.
+    df['adjusted_price_score'] = 1 - df['Normalized_price_on_demand']
 
-  # Similarly for other columns
-
-  return df
+    return df
 
 
-# Loading data
+# Function to load dataset from an Excel file (DATAFILE).
+# Logs successful data loading or any errors encountered.
 def load_data():
     try:
-        data = pd.read_excel("C:\\Users\\Ben\\Desktop\\pythonProject1\\Data\\1xA100_80GB_On-Demand_Pricing_Perf_Data.xlsx", sheet_name="Python_Data")
+        data = pd.read_excel(DATAFILE, sheet_name="Python_Data")
+        data['price_on_demand'] = data['price_on_demand'].astype(float)
         logging.info("Data loaded successfully from the Excel file.")
         return data
     except Exception as e:
         logging.error("Error loading the Excel file: %s", e)
-        raise e  # re-raise the exception so that the script halts if there's an error
-
-data = normalize_data(load_data())
-
-# Convert the Price_On_Demand column from a string to a float
-data['Price_On_Demand'] = data['Price_On_Demand'].astype(float)
-
-# Normalize and process the data
-
-form_factor_map = {'PCIe': 0, 'SXM': 1}
-data['Normalized_Form_factor'] = data['Form_factor'].map(form_factor_map)
-
-data['Normalized_VRAM'] = (data['VRAM'] - config['min_max']['VRAM']['min']) / (config['min_max']['VRAM']['max'] - config['min_max']['VRAM']['min'])
-
-for feature, values in config['min_max'].items():
-    if feature != 'Form_factor':  # since we already handled Form_factor
-        data[f'Normalized_{feature}'] = (data[feature] - values['min']) / (values['max'] - values['min'])
-
-max_price = data['Price_On_Demand'].max()
-min_price = data['Price_On_Demand'].min()
-data['Normalized_Price'] = (data['Price_On_Demand'] - min_price) / (max_price - min_price)
-
-data['Adjusted_Price_Score'] = 1 - data['Normalized_Price']
+        raise e
 
 
-
-data['Price/Perf_Score'] = (data['Normalized_Form_factor'] * config['weights']['Form_factor']) + \
-                          (data['Normalized_VRAM'] * config['weights']['VRAM']) + \
-                          (data['Normalized_RAM'] * config['weights']['RAM']) + \
-                          (data['Normalized_vCPUs'] * config['weights']['vCPUs']) + \
-                          (data['Normalized_Internal_Storage'] * config['weights']['Internal_Storage']) + \
-                          (data['Adjusted_Price_Score'] * config['weights']['Price_On_Demand'])
-
+# Function to convert a numeric score into a letter grade.
 def score_to_grade(score):
     if score >= 90:
         return 'A'
@@ -115,47 +77,36 @@ def score_to_grade(score):
         return 'F'
 
 
-#TESTING
+# Main
+# Calculate the Price/Performance Score using the normalized values and weights
+def run_main():
+    data = normalize_data(load_data())
+
+    data['Price/Perf_Score'] = (data['Normalized_form_factor'] * config['weights']['form_factor']) + \
+        (data['Normalized_vram'] * config['weights']['vram']) + \
+        (data['Normalized_ram'] * config['weights']['ram']) + \
+        (data['Normalized_vcpus'] * config['weights']['vcpus']) + \
+        (data['Normalized_internal_storage'] * config['weights']['Internal_Storage']) + \
+        (data['adjusted_price_score'] * config['weights']['price_on_demand'])
+
+
+# TESTING
 class TestNormalization(unittest.TestCase):
+    data = None
+
     @classmethod
     def setUpClass(cls):
-        cls.data = load_data()
-        cls.data = normalize_data(cls.data)
-
-        # Normalize Form factor
-        form_factor_map = {'PCIe': 0, 'SXM': 1}
-        cls.data['Normalized_Form_factor'] = cls.data['Form_factor'].map(form_factor_map)
-
-        # Normalize VRAM
-        min_val = config['min_max']['VRAM']['min']
-        max_val = config['min_max']['VRAM']['max']
-        cls.data['Normalized_VRAM'] = (cls.data['VRAM'] - min_val) / (max_val - min_val)
-
-        # Normalize RAM
-        min_val = config['min_max']['RAM']['min']
-        max_val = config['min_max']['RAM']['max']
-        cls.data['Normalized_RAM'] = (cls.data['RAM'] - min_val) / (max_val - min_val)
-
-        # Normalize vCPUs
-        min_val = config['min_max']['vCPUs']['min']
-        max_val = config['min_max']['vCPUs']['max']
-        cls.data['Normalized_vCPUs'] = (cls.data['vCPUs'] - min_val) / (max_val - min_val)
-
-        # Normalize Storage
-        min_val = config['min_max']['Internal_Storage']['min']
-        max_val = config['min_max']['Internal_Storage']['max']
-        cls.data['Normalized_Internal_Storage'] = (cls.data['Internal_Storage'] - min_val) / (max_val - min_val)
-
-        # Normalize Price
-        min_val = config['min_max']['Price_On_Demand']['min']
-        max_val = config['min_max']['Price_On_Demand']['max']
-        cls.data['Normalized_Price'] = (cls.data['Price_On_Demand'] - min_val) / (max_val - min_val)
-
         try:
+            cls.data = load_data()
             logging.info("Data loaded successfully from the Excel file.")
+
+            cls.data = normalize_data(cls.data)
+            logging.info("Data normalized successfully.")
         except Exception as e:
             logging.error("Error loading the Excel file: %s", e)
-            raise e  # If there's an error loading the data, you probably want to halt execution.
+            raise e
+
+        logging.info("Data loaded and normalized successfully.")
 
     def test_score_to_grade(self):
         self.assertEqual(score_to_grade(95), 'A')
@@ -163,62 +114,36 @@ class TestNormalization(unittest.TestCase):
         self.assertEqual(score_to_grade(65), 'D')
         self.assertEqual(score_to_grade(25), 'F')
 
-    def test_normalized_Form_factor(self):
-
-        # Print the maximum normalized value
-        print(self.data['Normalized_Form_factor'].max())  # <--- Add this line
-
+    def test_normalized_form_factor(self):
         # Checking if the normalization is within bounds
-        self.assertTrue(self.data['Normalized_Form_factor'].max() <= 1)
-        self.assertTrue(self.data['Normalized_Form_factor'].min() >= 0)
+        self.assertTrue(self.data['Normalized_form_factor'].max() <= 1)
+        self.assertTrue(self.data['Normalized_form_factor'].min() >= 0)
 
-    def test_normalized_VRAM(self):
-        # Assuming you have similar min and max for VRAM in your config
-        min_val = config['min_max']['VRAM']['min']
-        max_val = config['min_max']['VRAM']['max']
-
+    def test_normalized_vram(self):
         # Checking if the normalization is within bounds
-        self.data['Normalized_VRAM'] = (self.data['VRAM'] - min_val) / (max_val - min_val)
-        self.assertTrue(self.data['Normalized_VRAM'].max() <= 1)
-        self.assertTrue(self.data['Normalized_VRAM'].min() >= 0)
+        self.assertTrue(self.data['Normalized_vram'].max() <= 1)
+        self.assertTrue(self.data['Normalized_vram'].min() >= 0)
 
-    def test_normalized_RAM(self):
-        min_val = config['min_max']['RAM']['min']
-        max_val = config['min_max']['RAM']['max']
-        self.data['Normalized_RAM'] = (self.data['RAM'] - min_val) / (max_val - min_val)
-        self.assertTrue(self.data['Normalized_RAM'].max() <= 1)
-        self.assertTrue(self.data['Normalized_RAM'].min() >= 0)
+    def test_normalized_ram(self):
+        self.assertTrue(self.data['Normalized_ram'].max() <= 1)
+        self.assertTrue(self.data['Normalized_ram'].min() >= 0)
 
-    def test_normalized_vCPUs(self):
-        min_val = config['min_max']['vCPUs']['min']
-        max_val = config['min_max']['vCPUs']['max']
-
-        # Print the maximum normalized value
-        print(self.data['Normalized_vCPUs'].min(), self.data['Normalized_vCPUs'].max())
-
+    def test_normalized_vcpus(self):
         # Checking if the normalization is within bounds
-        self.data['Normalized_vCPUs'] = (self.data['vCPUs'] - min_val) / (max_val - min_val)
-        self.assertTrue(self.data['Normalized_vCPUs'].max() <= 1)
-        self.assertTrue(self.data['Normalized_vCPUs'].min() >= 0)
+        self.assertTrue(self.data['Normalized_vcpus'].max() <= 1)
+        self.assertTrue(self.data['Normalized_vcpus'].min() >= 0)
 
-    def test_normalized_Internal_Storage(self):
-        min_val = config['min_max']['Internal_Storage']['min']
-        max_val = config['min_max']['Internal_Storage']['max']
-        self.data['Normalized_Internal_Storage'] = (self.data['Internal_Storage'] - min_val) / (max_val - min_val)
-        self.assertTrue(self.data['Normalized_Internal_Storage'].max() <= 1)
-        self.assertTrue(self.data['Normalized_Internal_Storage'].min() >= 0)
+    def test_normalized_internal_storage(self):
+        self.assertTrue(self.data['Normalized_internal_storage'].max() <= 1)
+        self.assertTrue(self.data['Normalized_internal_storage'].min() >= 0)
 
-    def test_normalized_Price_On_Demand(self):
-        min_val = config['min_max']['Price_On_Demand']['min']
-        max_val = config['min_max']['Price_On_Demand']['max']
+    def test_normalized_price_on_demand(self):
+        self.assertTrue(self.data['Normalized_price_on_demand'].max() <= 1)
+        self.assertTrue(self.data['Normalized_price_on_demand'].min() >= 0)
 
-        # Print the maximum normalized value
-        print(self.data['Normalized_Price'].min(), self.data['Normalized_Price'].max())
 
-        self.data['Normalized_Price'] = (self.data['Price_On_Demand'] - min_val) / (max_val - min_val)
-        self.assertTrue(self.data['Normalized_Price'].max() <= 1)
-        self.assertTrue(self.data['Normalized_Price'].min() >= 0)
-
-# Remember to run the tests if this is your main testing script
+# This condition ensures the unittest module's test discovery mechanism
+# will execute the tests in this script when the script is run directly.
+# It won't execute if the script is imported as a module elsewhere.
 if __name__ == '__main__':
     unittest.main()
